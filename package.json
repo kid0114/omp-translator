@@ -1,0 +1,27 @@
+{
+  "name": "omp-translator",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Translate omp input and replies: input translated to the output (main-model) language, replies displayed in the input (display) language; code, commands, paths and URLs stay byte-for-byte intact",
+  "keywords": [
+    "omp-plugin",
+    "oh-my-pi"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/kid0114/omp-translator",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kid0114/omp-translator.git"
+  },
+  "omp": {
+    "extensions": ["./extensions/translator/index.ts"]
+  },
+  "pi": {
+    "extensions": ["./extensions/translator/index.ts"]
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "2.1.0",
+    "mdast-util-gfm": "3.1.0",
+    "micromark-extension-gfm": "3.0.0"
+  }
+}
