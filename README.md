@@ -107,9 +107,14 @@ Note: right-to-left languages (`ar`, `he`, `fa`, `ur`) are passed to the termina
 
 ### Local models (recommended when available)
 
-A local Hy-MT2 server keeps your text on the machine. Requires **macOS Apple Silicon with 32 GiB+ unified memory** (`sysctl hw.memsize`); the launcher refuses to start below that. MLX is capped to **RAM − 10 GiB**.
+A local Hy-MT2 server keeps your text on the machine (macOS Apple Silicon). The launcher reads `sysctl hw.memsize` and only offers checkpoints that fit:
 
-Preference order if `HYMT2_MODEL` is unset: **7B 8-bit**, then **7B 4-bit**, then **1.8B** (8-bit, then 4-bit), using a Hugging Face cache hit when present. If nothing is cached, 7B 8-bit is downloaded.
+- **7B 8-bit** (best): **32 GiB+**, MLX reserve **10 GiB**
+- **7B 4-bit**: **16 GiB+**, reserve **6 GiB**
+- **1.8B** (8-bit then 4-bit): **8 GiB+**, reserve **2 GiB**
+
+If `HYMT2_MODEL` is unset, it picks the best checkpoint that fits, preferring a Hugging Face cache hit. Below 32 GiB it will not start 7B 8-bit.
+
 
 ```bash
 python3 -m pip install mlx-lm

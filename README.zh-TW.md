@@ -108,9 +108,14 @@ omp plugin uninstall omp-translator
 
 ### 本地模型（有的話建議用）
 
-本地 Hy-MT2 伺服器讓文字留在本機。需要 **macOS Apple Silicon，統一記憶體 32 GiB+**（`sysctl hw.memsize`）；低於此值會拒絕啟動。MLX 上限為 **RAM − 10 GiB**。
+本地 Hy-MT2 伺服器讓文字留在本機（macOS Apple Silicon）。啟動器讀取 `sysctl hw.memsize`，只提供裝得下的權重：
 
-未設定 `HYMT2_MODEL` 時的優先序：**7B 8-bit**，其次 **7B 4-bit**，再其次 **1.8B**（先 8-bit 再 4-bit）；以 Hugging Face 快取命中為準。若都未快取，則下載 7B 8-bit。
+- **7B 8-bit**（首選）：**32 GiB+**，MLX 預留 **10 GiB**
+- **7B 4-bit**：**16 GiB+**，預留 **6 GiB**
+- **1.8B**（先 8-bit 再 4-bit）：**8 GiB+**，預留 **2 GiB**
+
+未設定 `HYMT2_MODEL` 時，在裝得下的選項裡選最好的，並優先用 Hugging Face 快取。低於 32 GiB 不會啟動 7B 8-bit。
+
 
 ```bash
 python3 -m pip install mlx-lm

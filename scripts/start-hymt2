@@ -1,7 +1,7 @@
 #!/bin/bash
 # Start a local Hy-MT2 mlx_lm server for omp-translator.
-# Prefer 7B 8-bit, then 7B 4-bit, then 1.8B. Requires macOS with 32 GiB+ RAM.
-# MLX is capped to (RAM − 10 GiB). Loopback only. Optional pipeline sharding: HYMT2_PIPELINE=1
+# 7B 8-bit wants 32 GiB+. 7B 4-bit and 1.8B may run with less.
+# MLX cap is (RAM − reserve). Loopback only. Pipeline sharding: HYMT2_PIPELINE=1
 # Usage: scripts/start-hymt2 [--check]
 set -euo pipefail
 
@@ -10,8 +10,8 @@ PORT="${HYMT2_PORT:-8080}"
 PYTHON="${HYMT2_PYTHON:-python3}"
 LOG="${HYMT2_LOG:-$HOME/Library/Logs/hymt2-server.log}"
 PIDFILE="${HYMT2_PIDFILE:-${LOG%.log}.pid}"
-MIN_RAM_BYTES=$((32 * 1024 * 1024 * 1024))
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+GiB=$((1024 * 1024 * 1024))
 
 MODEL_7B_8BIT="mlx-community/Hy-MT2-7B-8bit"
 MODEL_7B_4BIT="mlx-community/Hy-MT2-7B-4bit"
@@ -25,33 +25,63 @@ hf_cached() {
 	[ -d "${cache}/${slug}/snapshots" ]
 }
 
+min_ram_for() {
+	case "$1" in
+	*"Hy-MT2-7B-8bit"*) printf '%s\n' $((32 * GiB)) ;;
+	*"Hy-MT2-7B-4bit"*) printf '%s\n' $((16 * GiB)) ;;
+	*"Hy-MT2-1.8B"*) printf '%s\n' $((8 * GiB)) ;;
+	*) printf '%s\n' $((32 * GiB)) ;;
+	esac
+}
+
+reserve_for() {
+	case "$1" in
+	*"Hy-MT2-7B-8bit"*) printf '%s\n' $((10 * GiB)) ;;
+	*"Hy-MT2-7B-4bit"*) printf '%s\n' $((6 * GiB)) ;;
+	*"Hy-MT2-1.8B"*) printf '%s\n' $((2 * GiB)) ;;
+	*) printf '%s\n' $((10 * GiB)) ;;
+	esac
+}
+
+fits_ram() {
+	local id="$1" total="$2"
+	[ "$total" -ge "$(min_ram_for "$id")" ]
+}
+
+macos_ram() {
+	if [ "$(uname -s)" != "Darwin" ]; then
+		echo "Hy-MT2 local serve is for macOS Apple Silicon." >&2
+		exit 1
+	fi
+	sysctl -n hw.memsize
+}
+
 pick_model() {
+	local total="$1" id
 	if [ -n "${HYMT2_MODEL:-}" ]; then
+		if ! fits_ram "$HYMT2_MODEL" "$total"; then
+			echo "HYMT2_MODEL=${HYMT2_MODEL} needs more unified memory (sysctl hw.memsize)." >&2
+			exit 1
+		fi
 		printf '%s\n' "$HYMT2_MODEL"
 		return
 	fi
-	local id
-	for id in "$MODEL_7B_8BIT" "$MODEL_7B_4BIT" "$MODEL_18B_8BIT" "$MODEL_18B_4BIT"; do
+	local candidates=()
+	fits_ram "$MODEL_7B_8BIT" "$total" && candidates+=("$MODEL_7B_8BIT")
+	fits_ram "$MODEL_7B_4BIT" "$total" && candidates+=("$MODEL_7B_4BIT")
+	fits_ram "$MODEL_18B_8BIT" "$total" && candidates+=("$MODEL_18B_8BIT")
+	fits_ram "$MODEL_18B_4BIT" "$total" && candidates+=("$MODEL_18B_4BIT")
+	if [ "${#candidates[@]}" -eq 0 ]; then
+		echo "Not enough unified memory for Hy-MT2 (7B 8-bit needs 32 GiB; 7B 4-bit 16 GiB; 1.8B 8 GiB)." >&2
+		exit 1
+	fi
+	for id in "${candidates[@]}"; do
 		if hf_cached "$id"; then
 			printf '%s\n' "$id"
 			return
 		fi
 	done
-	printf '%s\n' "$MODEL_7B_8BIT"
-}
-
-require_macos_ram() {
-	if [ "$(uname -s)" != "Darwin" ]; then
-		echo "Hy-MT2 local serve is for macOS Apple Silicon." >&2
-		exit 1
-	fi
-	local total
-	total="$(sysctl -n hw.memsize)"
-	if [ "$total" -lt "$MIN_RAM_BYTES" ]; then
-		echo "Hy-MT2 local serve needs 32 GiB+ unified memory (sysctl hw.memsize)." >&2
-		exit 1
-	fi
-	printf '%s\n' "$total"
+	printf '%s\n' "${candidates[0]}"
 }
 
 model_up() {
@@ -59,9 +89,13 @@ model_up() {
 	curl -s --max-time 5 "http://${HOST}:${PORT}/v1/models" | grep -q '"id"[[:space:]]*:[[:space:]]*"'"$model"'"'
 }
 
-MODEL="$(pick_model)"
-TOTAL_RAM="$(require_macos_ram)"
+TOTAL_RAM="$(macos_ram)"
+MODEL="$(pick_model "$TOTAL_RAM")"
+MIN_RAM="$(min_ram_for "$MODEL")"
+RESERVE="$(reserve_for "$MODEL")"
 export HYMT2_TOTAL_RAM="$TOTAL_RAM"
+export HYMT2_MIN_RAM="$MIN_RAM"
+export HYMT2_RESERVE_BYTES="$RESERVE"
 
 if [ "${1:-}" = "--check" ]; then
 	command -v "$PYTHON" >/dev/null || {
@@ -69,7 +103,7 @@ if [ "${1:-}" = "--check" ]; then
 		exit 1
 	}
 	"$PYTHON" -c "import mlx.core, mlx_lm" >/dev/null
-	echo "ok: model=${MODEL} ram_ok=1 reserve=10GiB pipeline=${HYMT2_PIPELINE:-0}"
+	echo "ok: model=${MODEL} ram_ok=1 min=$((MIN_RAM / GiB))GiB reserve=$((RESERVE / GiB))GiB pipeline=${HYMT2_PIPELINE:-0}"
 	exit 0
 fi
 
@@ -100,7 +134,8 @@ if [ "${HYMT2_PIPELINE:-0}" = "1" ]; then
 	args+=(--pipeline)
 fi
 
-nohup env HYMT2_TOTAL_RAM="$TOTAL_RAM" "$PYTHON" "$ROOT/hymt2_serve.py" "${args[@]}" >>"$LOG" 2>&1 &
+nohup env HYMT2_TOTAL_RAM="$TOTAL_RAM" HYMT2_MIN_RAM="$MIN_RAM" HYMT2_RESERVE_BYTES="$RESERVE" \
+	"$PYTHON" "$ROOT/hymt2_serve.py" "${args[@]}" >>"$LOG" 2>&1 &
 echo $! >"$PIDFILE"
 
 for _ in $(seq 1 150); do
