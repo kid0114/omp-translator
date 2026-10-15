@@ -108,7 +108,7 @@ omp plugin uninstall omp-translator
 
 ### 本地模型（有的話建議用）
 
-本地 Hy-MT2 伺服器讓文字留在本機（macOS Apple Silicon）。啟動器讀取 `sysctl hw.memsize`，只提供裝得下的權重：
+本地 Hy-MT2 伺服器讓文字留在本機（macOS Apple Silicon）。目標機型是 MacBook Pro，含 Pro 以上晶片（Max / Ultra）。其他晶片的速度未知。啟動器讀取 `sysctl hw.memsize`，只提供裝得下的權重：
 
 - **7B 8-bit**（首選）：**32 GiB+**，MLX 預留 **10 GiB**
 - **7B 4-bit**：**16 GiB+**，預留 **6 GiB**

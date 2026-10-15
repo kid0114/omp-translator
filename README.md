@@ -107,7 +107,7 @@ Note: right-to-left languages (`ar`, `he`, `fa`, `ur`) are passed to the termina
 
 ### Local models (recommended when available)
 
-A local Hy-MT2 server keeps your text on the machine (macOS Apple Silicon). The launcher reads `sysctl hw.memsize` and only offers checkpoints that fit:
+A local Hy-MT2 server keeps your text on the machine (macOS Apple Silicon). Target hardware is MacBook Pro, including chips above Pro level (Max / Ultra). Speed on other chips is unknown. The launcher reads `sysctl hw.memsize` and only offers checkpoints that fit:
 
 - **7B 8-bit** (best): **32 GiB+**, MLX reserve **10 GiB**
 - **7B 4-bit**: **16 GiB+**, reserve **6 GiB**
