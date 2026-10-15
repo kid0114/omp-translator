@@ -1,0 +1,18 @@
+providers:
+  local-hymt2:
+    baseUrl: http://127.0.0.1:8080/v1
+    api: openai-completions
+    auth: none
+    models:
+      - id: mlx-community/Hy-MT2-7B-8bit
+        name: Hy-MT2 7B
+        api: openai-completions
+        reasoning: false
+        input: [text]
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+        contextWindow: 262144
+        maxTokens: 16384

@@ -108,7 +108,19 @@ omp plugin uninstall omp-translator
 
 ### 本地模型（有的話建議用）
 
-本地模型讓文字留在你的機器上。延遲取決於文件長度、模型大小、硬體與伺服器負載。在自己的 `~/.omp/agent/models.yml` 註冊 `local-hymt2` 提供者，然後執行一次 `/translator default local-hymt2/<model-id>` 存下來。
+本地 Hy-MT2 伺服器讓文字留在本機。需要 **macOS Apple Silicon，統一記憶體 32 GiB+**（`sysctl hw.memsize`）；低於此值會拒絕啟動。MLX 上限為 **RAM − 10 GiB**。
+
+未設定 `HYMT2_MODEL` 時的優先序：**7B 8-bit**，其次 **7B 4-bit**，再其次 **1.8B**（先 8-bit 再 4-bit）；以 Hugging Face 快取命中為準。若都未快取，則下載 7B 8-bit。
+
+```bash
+python3 -m pip install mlx-lm
+scripts/start-hymt2 --check
+scripts/start-hymt2
+```
+
+只綁 loopback。預設埠為 mlx_lm 的 8080（可用 `HYMT2_PORT` 覆寫）。管線分片為可選：`HYMT2_PIPELINE=1 scripts/start-hymt2`。
+
+將 `examples/models.yml` 合併進 `~/.omp/agent/models.yml`，再執行 `/translator default local-hymt2/mlx-community/Hy-MT2-7B-8bit`（或啟動器實際選到的 4-bit / 1.8B id）。
 
 ### 託管模型
 

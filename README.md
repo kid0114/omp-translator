@@ -107,7 +107,19 @@ Note: right-to-left languages (`ar`, `he`, `fa`, `ur`) are passed to the termina
 
 ### Local models (recommended when available)
 
-A local model keeps your text on your machine. Latency depends on document length, model size, hardware, and server load. Register a `local-hymt2` provider in your own `~/.omp/agent/models.yml`, then run `/translator default local-hymt2/<model-id>` once to save it.
+A local Hy-MT2 server keeps your text on the machine. Requires **macOS Apple Silicon with 32 GiB+ unified memory** (`sysctl hw.memsize`); the launcher refuses to start below that. MLX is capped to **RAM − 10 GiB**.
+
+Preference order if `HYMT2_MODEL` is unset: **7B 8-bit**, then **7B 4-bit**, then **1.8B** (8-bit, then 4-bit), using a Hugging Face cache hit when present. If nothing is cached, 7B 8-bit is downloaded.
+
+```bash
+python3 -m pip install mlx-lm
+scripts/start-hymt2 --check
+scripts/start-hymt2
+```
+
+Loopback only. Default listen port is mlx_lm's 8080 (`HYMT2_PORT` overrides). Pipeline sharding is opt-in: `HYMT2_PIPELINE=1 scripts/start-hymt2`.
+
+Merge `examples/models.yml` into `~/.omp/agent/models.yml`, then `/translator default local-hymt2/mlx-community/Hy-MT2-7B-8bit` (or the 4-bit / 1.8B id the launcher selected).
 
 ### Hosted models
 

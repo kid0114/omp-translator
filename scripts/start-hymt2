@@ -1,0 +1,114 @@
+#!/bin/bash
+# Start a local Hy-MT2 mlx_lm server for omp-translator.
+# Prefer 7B 8-bit, then 7B 4-bit, then 1.8B. Requires macOS with 32 GiB+ RAM.
+# MLX is capped to (RAM − 10 GiB). Loopback only. Optional pipeline sharding: HYMT2_PIPELINE=1
+# Usage: scripts/start-hymt2 [--check]
+set -euo pipefail
+
+HOST="${HYMT2_HOST:-127.0.0.1}"
+PORT="${HYMT2_PORT:-8080}"
+PYTHON="${HYMT2_PYTHON:-python3}"
+LOG="${HYMT2_LOG:-$HOME/Library/Logs/hymt2-server.log}"
+PIDFILE="${HYMT2_PIDFILE:-${LOG%.log}.pid}"
+MIN_RAM_BYTES=$((32 * 1024 * 1024 * 1024))
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+MODEL_7B_8BIT="mlx-community/Hy-MT2-7B-8bit"
+MODEL_7B_4BIT="mlx-community/Hy-MT2-7B-4bit"
+MODEL_18B_8BIT="mlx-community/Hy-MT2-1.8B-8bit"
+MODEL_18B_4BIT="mlx-community/Hy-MT2-1.8B-4bit"
+
+hf_cached() {
+	local id="$1"
+	local cache="${HF_HOME:-${HOME}/.cache/huggingface}/hub"
+	local slug="models--${id//\//--}"
+	[ -d "${cache}/${slug}/snapshots" ]
+}
+
+pick_model() {
+	if [ -n "${HYMT2_MODEL:-}" ]; then
+		printf '%s\n' "$HYMT2_MODEL"
+		return
+	fi
+	local id
+	for id in "$MODEL_7B_8BIT" "$MODEL_7B_4BIT" "$MODEL_18B_8BIT" "$MODEL_18B_4BIT"; do
+		if hf_cached "$id"; then
+			printf '%s\n' "$id"
+			return
+		fi
+	done
+	printf '%s\n' "$MODEL_7B_8BIT"
+}
+
+require_macos_ram() {
+	if [ "$(uname -s)" != "Darwin" ]; then
+		echo "Hy-MT2 local serve is for macOS Apple Silicon." >&2
+		exit 1
+	fi
+	local total
+	total="$(sysctl -n hw.memsize)"
+	if [ "$total" -lt "$MIN_RAM_BYTES" ]; then
+		echo "Hy-MT2 local serve needs 32 GiB+ unified memory (sysctl hw.memsize)." >&2
+		exit 1
+	fi
+	printf '%s\n' "$total"
+}
+
+model_up() {
+	local model="$1"
+	curl -s --max-time 5 "http://${HOST}:${PORT}/v1/models" | grep -q '"id"[[:space:]]*:[[:space:]]*"'"$model"'"'
+}
+
+MODEL="$(pick_model)"
+TOTAL_RAM="$(require_macos_ram)"
+export HYMT2_TOTAL_RAM="$TOTAL_RAM"
+
+if [ "${1:-}" = "--check" ]; then
+	command -v "$PYTHON" >/dev/null || {
+		echo "missing python: $PYTHON" >&2
+		exit 1
+	}
+	"$PYTHON" -c "import mlx.core, mlx_lm" >/dev/null
+	echo "ok: model=${MODEL} ram_ok=1 reserve=10GiB pipeline=${HYMT2_PIPELINE:-0}"
+	exit 0
+fi
+
+if model_up "$MODEL" 2>/dev/null; then
+	echo "already running: ${MODEL} on loopback"
+	exit 0
+fi
+
+if lsof -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+	echo "port ${PORT} is busy but not serving ${MODEL}" >&2
+	exit 1
+fi
+
+command -v "$PYTHON" >/dev/null || {
+	echo "missing python: $PYTHON" >&2
+	exit 1
+}
+"$PYTHON" -c "import mlx.core, mlx_lm" >/dev/null || {
+	echo "python is missing mlx / mlx_lm" >&2
+	exit 1
+}
+
+mkdir -p "$(dirname "$LOG")"
+echo "starting ${MODEL} (log: ${LOG})"
+
+args=(--model "$MODEL" --host "$HOST" --port "$PORT" --decode-concurrency 4 --prompt-concurrency 2 --prompt-cache-size 8 --prompt-cache-bytes 2147483648)
+if [ "${HYMT2_PIPELINE:-0}" = "1" ]; then
+	args+=(--pipeline)
+fi
+
+nohup env HYMT2_TOTAL_RAM="$TOTAL_RAM" "$PYTHON" "$ROOT/hymt2_serve.py" "${args[@]}" >>"$LOG" 2>&1 &
+echo $! >"$PIDFILE"
+
+for _ in $(seq 1 150); do
+	if model_up "$MODEL" 2>/dev/null; then
+		echo "ready: ${MODEL} on loopback"
+		exit 0
+	fi
+	sleep 2
+done
+echo "timed out waiting for the server; see ${LOG}" >&2
+exit 1
