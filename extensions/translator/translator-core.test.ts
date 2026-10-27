@@ -85,6 +85,14 @@ describe("parser-backed Markdown translation", () => {
 		expect(plan.restore(["解壓到", "並閱讀"])).toBe("解壓到 usr/local/bin 並閱讀 docs/guide.");
 	});
 
+	test("classifies extension-bearing slash compounds consistently around punctuation", () => {
+		const result = translated("Use Bun/Node.js, Go, or Python.", {
+			Use: "使用",
+			"Go, or Python.": "Go 或 Python。",
+		});
+		expect(result).toBe("使用 Bun/Node.js, Go 或 Python。");
+	});
+
 	test("keeps strong nodes when translated punctuation changes closer flanking", () => {
 		const result = translated("**Every segment stays intact**. A reply has many.", {
 			"Every segment stays intact": "每個片段都保持完整。",
